@@ -35,7 +35,7 @@ describe("Edit module", () => {
 		return newTable;
 	};
 	
-	const setupList = ({
+	const setupList = async ({
 		cellType = "header",
 		cellValue = "Female",
 		editorParams = { values: ["Male", "Female"] },
@@ -57,11 +57,16 @@ describe("Edit module", () => {
 			cancel,
 			editorParams
 		);
-		
+
+		list.input.dispatchEvent(new Event("focus"));
+		await new Promise(resolve => setTimeout(resolve, 0));
+
 		return {list, success, cancel, element};
 	};
 	
 	beforeEach(async () => {
+		// jsdom does not implement scrollIntoView, which the list focus uses.
+		Element.prototype.scrollIntoView = jest.fn();
 		table = await setupTable();
 	});
 	
@@ -154,32 +159,33 @@ describe("Edit module", () => {
 		expect(cellEditedSpy).toHaveBeenCalled();
 	});
 	
-	it("should apply a focused header list filter item when Enter is pressed", () => {
-		const {list, success} = setupList({
+	it("should apply a focused header list filter item when Enter is pressed", async () => {
+		const {list, success} = await setupList({
 			cellValue: "",
 		});
-		const item = list.data.find(item => item.value === "Female");
-		
-		list._focusItem(item);
-		list._keyEnter();
-		
+
+		// Navigate down to "Female" (the second option) and apply it.
+		list.listEl.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+		list.listEl.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+		list.listEl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
 		expect(success).toHaveBeenCalledWith("Female");
 		expect(list.input.value).toBe("Female");
 	});
-	
-	it("should keep a header list filter selected when Enter is pressed repeatedly", () => {
-		const {list, success} = setupList();
-		
-		list._keyEnter();
-		list._keyEnter();
-		
+
+	it("should keep a header list filter selected when Enter is pressed repeatedly", async () => {
+		const {list, success} = await setupList();
+
+		list.listEl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+		list.listEl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
 		expect(success).toHaveBeenCalledTimes(2);
 		expect(success).toHaveBeenNthCalledWith(1, "Female");
 		expect(success).toHaveBeenNthCalledWith(2, "Female");
 	});
-	
-	it("should use currentItems instead of initialValues after the first multiselect parse", () => {
-		const {list} = setupList({
+
+	it("should use currentItems instead of initialValues after the first multiselect parse", async () => {
+		const {list} = await setupList({
 			cellType: "cell",
 			cellValue: ["red", "blue"],
 			editorParams: {
@@ -187,20 +193,21 @@ describe("Edit module", () => {
 				values: ["red", "green", "blue"],
 			},
 		});
-		
-		list._parseList(["red", "green", "blue"]);
-		
+
 		expect(list.initialValues).toBeNull();
 		expect(list.currentItems.map(item => item.value)).toEqual(["red", "blue"]);
-		
-		list._chooseItem(list.currentItems.find(item => item.value === "red"));
-		
+
+		// Deselect "red" by clicking its rendered list item.
+		list.data.find(item => item.value === "red").element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
 		expect(list.currentItems.map(item => item.value)).toEqual(["blue"]);
-		
-		const rebuiltItems = list._parseList(["red", "green", "blue"]);
-		const redItem = rebuiltItems.find(item => item.value === "red");
-		const blueItem = rebuiltItems.find(item => item.value === "blue");
-		
+
+		list.input.dispatchEvent(new Event("focus"));
+		await new Promise(resolve => setTimeout(resolve, 0));
+
+		const redItem = list.data.find(item => item.value === "red");
+		const blueItem = list.data.find(item => item.value === "blue");
+
 		expect(list.initialValues).toBeNull();
 		expect(redItem.selected).toBe(false);
 		expect(blueItem.selected).toBe(true);
